@@ -94,7 +94,8 @@ export default defineConfig(({ mode }) => {
         ],
         resolve: {
             alias: {
-                '@': fileURLToPath(new URL('./src', import.meta.url))
+                '@': fileURLToPath(new URL('./src', import.meta.url)),
+                vue: 'vue/dist/vue.esm-bundler.js' // 支持运行时模板编译
             }
         },
         server: {

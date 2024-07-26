@@ -1,8 +1,6 @@
 @import 'reset.css';
 @import 'tailwind.css';
 @import 'var.css';
-/* animate.css */
-@import 'animate.css';
 
 /* //默认页的上下都是10mm，左右都是0mm */
 /* @page {
