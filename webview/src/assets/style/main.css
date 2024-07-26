@@ -1,0 +1,24 @@
+@import 'reset.css';
+@import 'tailwind.css';
+@import 'var.css';
+/* animate.css */
+@import 'animate.css';
+
+/* //默认页的上下都是10mm，左右都是0mm */
+/* @page {
+    size: A4;
+    margin-top: 10mm;
+    margin-bottom: 10mm;
+    margin-left: 0mm;
+    margin-right: 0mm;
+} */
+
+/* //第一页的上面是0mm，下面是10mm，左右都是0mm */
+/* @page :first {
+    size: A4;
+    margin-top: 0;
+    margin-bottom: 10mm;
+    margin-left: 0mm;
+    margin-right: 0mm;
+} */
+
