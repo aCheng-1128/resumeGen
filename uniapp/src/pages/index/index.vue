@@ -6,7 +6,9 @@
 <script lang="ts" setup></script>
 
 <template>
-    <view class="index">index </view>
+    <view class="index">
+        <web-view src="http://localhost:82/resume" />
+    </view>
 </template>
 
 <style lang="scss" scoped>

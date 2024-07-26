@@ -3,25 +3,7 @@
 module.exports = {
     rules: {
         // @see: https://commitlint.js.org/#/reference-rules
-        'type-enum': [
-            2,
-            'always',
-            [
-                'feat',
-                'fix',
-                'update',
-                'docs',
-                'style',
-                'refactor',
-                'perf',
-                'test',
-                'build',
-                'ci',
-                'revert',
-                'chore',
-                'merge',
-            ],
-        ],
+        'type-enum': [2, 'always', ['feat', 'fix', 'update', 'docs', 'style', 'refactor', 'perf', 'test', 'build', 'ci', 'revert', 'chore', 'merge']],
     },
     prompt: {
         alias: { fd: 'docs: fix typos' },
