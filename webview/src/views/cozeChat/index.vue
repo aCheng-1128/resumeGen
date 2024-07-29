@@ -46,7 +46,8 @@ const sendMsg = async () => {
     if (!iptText.value.trim()) return
 
     try {
-        await sendMessage(curConvIdValue.value, iptText.value)
+        const res = await sendMessage(curConvIdValue.value, iptText.value)
+        chatId.value = res.data.id
         await createChatFn()
         iptText.value = ''
     } catch (error) {
