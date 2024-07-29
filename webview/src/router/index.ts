@@ -12,6 +12,11 @@ const router = createRouter({
             path: '/resume',
             name: 'resume',
             component: () => import('@/views/resume/index.vue')
+        },
+        {
+            path: '/cozeChat',
+            name: 'cozeChat',
+            component: () => import('@/views/cozeChat/index.vue')
         }
     ]
 })
