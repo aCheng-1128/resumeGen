@@ -1,32 +1,27 @@
 <script setup lang="ts">
-import { createConversation, getMessageList, genChat, getChatStatus, sendMessage } from '@/api/cozeChat'
-import { computed, ref, onMounted, watch } from 'vue'
+import { getConversations, getMessageList, genConversation, getChatStatus, getChatMessages, sendMessage } from '@/api/cozeChat'
+import { ref, onMounted, watch } from 'vue'
 
-interface IConvIds {
-    id: number
-    conversationId: string
+interface IConv {
+    id: string
+    created_at: string
+    name: string
 }
 
-const convIds = ref<IConvIds[]>([])
-const curConvId = ref<number>(-1)
-
-const curConvIdValue = computed(() => {
-    const currentConv = convIds.value.find((conv) => conv.id === curConvId.value)
-    return currentConv ? currentConv.conversationId : ''
-})
-
+const convs = ref<IConv[]>([])
+const curConvId = ref<string>('')
 const msgList = ref<any[]>([])
 const iptText = ref<string>('')
+const chatId = ref<string>('')
+const chatStatus = ref<string>('')
+let timer: NodeJS.Timer | any = null
 
 const fetchConversations = async () => {
     try {
-        const res = await createConversation()
-        convIds.value = res.data.conversationIds.map((item: string, index: number) => ({
-            id: index,
-            conversationId: item
-        }))
-        if (convIds.value.length > 0) {
-            curConvId.value = convIds.value[0].id
+        const res = await getConversations()
+        convs.value = res.data.conversations
+        if (convs.value.length > 0) {
+            curConvId.value = convs.value[0].id
         }
     } catch (error) {
         console.error('Failed to fetch conversations:', error)
@@ -42,29 +37,12 @@ const getMessageListFn = async (convId: string) => {
     }
 }
 
-const sendMsg = async () => {
-    if (!iptText.value.trim()) return
-
+const getChatId = async () => {
     try {
-        const res = await sendMessage(curConvIdValue.value, iptText.value)
+        const res = await sendMessage(curConvId.value, iptText.value)
         chatId.value = res.data.id
-        await createChatFn()
-        iptText.value = ''
     } catch (error) {
-        console.error('Failed to send message:', error)
-    }
-}
-
-const chatId = ref<string>('')
-let timer: NodeJS.Timer | any = null
-
-const createChatFn = async () => {
-    try {
-        const res = await genChat(curConvIdValue.value)
-        chatId.value = res.data.id
-        timer = setInterval(getChatStatusFn, 1000)
-    } catch (error) {
-        console.error('Failed to create chat:', error)
+        console.error('Failed to get chat id:', error)
     }
 }
 
@@ -72,30 +50,34 @@ const getChatStatusFn = async () => {
     if (!chatId.value) return
 
     try {
-        const res = await getChatStatus(curConvIdValue.value, chatId.value)
-        if (res.data.status === 'completed') {
+        const res = await getChatStatus(curConvId.value, chatId.value)
+        chatStatus.value = res.data.status
+        if (chatStatus.value === 'completed') {
             if (timer) clearInterval(timer)
-            await getMessageListFn(curConvIdValue.value)
+            await getMessageListFn(curConvId.value)
+            getChatMessagesFn()
         }
     } catch (error) {
         console.error('Failed to get chat status:', error)
     }
 }
 
-const switchNav = (item: IConvIds) => {
+const sendMsg = async () => {
+    if (!iptText.value.trim()) return
+    await getChatId()
+    timer = setInterval(getChatStatusFn, 1000)
+    iptText.value = ''
+}
+
+const switchNav = (item: IConv) => {
     curConvId.value = item.id
-    getMessageListFn(item.conversationId)
+    getMessageListFn(item.id)
 }
 
 watch(curConvId, (newVal) => {
-    if (convIds.value.length > 0) {
-        const selectedConv = convIds.value.find((conv) => conv.id === newVal)
-        if (selectedConv) {
-            getMessageListFn(selectedConv.conversationId).then(() => {
-                scrollYToBottom()
-            })
-        }
-    }
+    getMessageListFn(newVal).then(() => {
+        scrollYToBottom()
+    })
 })
 
 const msgListScroll = ref<HTMLElement | null>(null)
@@ -106,23 +88,39 @@ const scrollYToBottom = () => {
     }
 }
 
+const getChatMessagesFn = async () => {
+    try {
+        const res = await getChatMessages(curConvId.value, chatId.value)
+        console.log('getChatMessages:', res)
+    } catch (error) {
+        console.error('Failed to fetch chat messages:', error)
+    }
+}
+
+const addConversation = async () => {
+    await genConversation().then(fetchConversations)
+}
+
 onMounted(fetchConversations)
 </script>
 
 <template>
     <div class="coze_chat">
-        <div class="convIds-list">
-            <div v-for="item in convIds" :key="item.id" @click="switchNav(item)" class="item" :class="{ active: item.id === curConvId }">
-                {{ item.id }}
+        <div class="header">
+            <div class="convIds-list">
+                <div v-for="item in convs" :key="item.id" @click="switchNav(item)" class="item" :class="{ active: item.id === curConvId }">
+                    {{ item.name }}
+                </div>
             </div>
+            <div class="add" @click="addConversation">+</div>
         </div>
         <div class="msg-list" ref="msgListScroll">
-            <div v-for="item in msgList" :key="item.id">
-                <div>{{ item.content }}</div>
+            <div v-for="item in msgList" :key="item.id" class="msg-item" :class="{ 'user-msg': item.role === 'user', 'ai-msg': item.role === 'assistant' }">
+                <div class="msg-content">{{ item.content }}</div>
             </div>
         </div>
         <div class="ipt-box">
-            <input type="text" v-model="iptText" />
+            <input type="text" v-model="iptText" @keyup.enter="sendMsg" placeholder="请输入消息..." />
             <button @click="sendMsg">发送</button>
         </div>
     </div>
@@ -134,27 +132,49 @@ onMounted(fetchConversations)
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    background-color: #f1f1f1;
 
-    .convIds-list {
-        height: 50px;
+    .header {
         display: flex;
+        justify-content: space-between;
         align-items: center;
-        gap: 10px;
-        .item {
+        padding: 0 10px;
+        background-color: #ffffff;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        .convIds-list {
+            height: 50px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            overflow-x: auto;
+            .item {
+                font-size: 16px;
+                padding: 8px 16px;
+                background-color: aliceblue;
+                color: blue;
+                text-align: center;
+                cursor: pointer;
+                white-space: nowrap;
+                border-radius: 4px;
+                &:hover {
+                    color: red;
+                    background-color: antiquewhite;
+                }
+                &.active {
+                    color: red;
+                    background-color: antiquewhite;
+                }
+            }
+        }
+
+        .add {
             font-size: 16px;
-            padding: 4px 16px;
+            padding: 8px 16px;
             background-color: aliceblue;
             color: blue;
             text-align: center;
             cursor: pointer;
-            &:hover {
-                color: red;
-                background-color: antiquewhite;
-            }
-            &.active {
-                color: red;
-                background-color: antiquewhite;
-            }
+            border-radius: 4px;
         }
     }
 
@@ -165,9 +185,72 @@ onMounted(fetchConversations)
         display: flex;
         flex-direction: column;
         gap: 10px;
+        padding: 10px;
+        background-color: #f1f1f1;
+
+        .msg-item {
+            display: flex;
+            align-items: flex-end;
+
+            &.user-msg {
+                justify-content: flex-end;
+
+                .msg-content {
+                    background-color: #007bff;
+                    color: white;
+                    border-radius: 12px 12px 0 12px;
+                }
+            }
+
+            &.ai-msg {
+                justify-content: flex-start;
+
+                .msg-content {
+                    background-color: #e0e0e0;
+                    color: black;
+                    border-radius: 12px 12px 12px 0;
+                }
+            }
+
+            .msg-content {
+                max-width: 70%;
+                padding: 10px;
+                border-radius: 12px;
+                word-wrap: break-word;
+                word-break: break-all;
+            }
+        }
     }
+
     .ipt-box {
         height: 50px;
+        display: flex;
+        padding: 5px 10px;
+        background-color: #ffffff;
+        align-items: center;
+        gap: 10px;
+        box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+
+        input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 10px 15px;
+            border: none;
+            background-color: #007bff;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            &:hover {
+                background-color: #0056b3;
+            }
+        }
     }
 }
 </style>

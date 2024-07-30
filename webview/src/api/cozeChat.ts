@@ -15,8 +15,14 @@ const api = axios.create({
 })
 
 // 创建会话
-const createConversation = async () => {
-    const response = await api.post('/create')
+const genConversation = async () => {
+    const response = await api.post('/genConversation')
+    return response.data
+}
+
+// 获取会话
+const getConversations = async () => {
+    const response = await api.get('/getConversations')
     return response.data
 }
 
@@ -74,7 +80,8 @@ const sendMessage = async (conversationId: string, message: string) => {
 }
 
 export {
-    createConversation,
+    genConversation,
+    getConversations,
     getConversationInfo,
     deleteConversation,
     genMessage,
