@@ -1,82 +1,150 @@
-import axios from 'axios'
+import { request } from '@/utils'
 
-const apiBaseUrl = 'http://localhost:3366/coze' // 请根据实际端口调整
+const baseUrl = 'coze'
 
-// token
-const getToken = () => localStorage.getItem('token')
+interface IConversation {
+    id: string
+    name: string
+}
 
-// 创建 Axios 实例
-const api = axios.create({
-    baseURL: apiBaseUrl,
-    headers: {
-        Authorization: `Bearer ${getToken()}`,
-        'Content-Type': 'application/json'
-    }
-})
-
-// 创建会话
+/**
+ * 创建会话
+ * @returns {Promise<IConversation>} 返回创建的会话信息
+ */
 const genConversation = async () => {
-    const response = await api.post('/genConversation')
-    return response.data
+    return request<IConversation>({
+        url: `${baseUrl}/genConversation`,
+        method: 'POST'
+    })
 }
 
-// 获取会话
+/**
+ * 获取会话列表
+ * @returns {Promise<IConversation[]>} 返回会话列表
+ */
 const getConversations = async () => {
-    const response = await api.get('/getConversations')
-    return response.data
+    return request<IConversation[]>({
+        url: `${baseUrl}/getConversations`,
+        method: 'GET'
+    })
 }
 
-// 查看会话信息
+/**
+ * 查看会话信息
+ * @param {string} conversationId - 会话ID
+ * @returns {Promise<IConversation>} 返回会话信息
+ */
 const getConversationInfo = async (conversationId: string) => {
-    const response = await api.get(`/info/${conversationId}`)
-    return response.data
+    return request<IConversation>({
+        url: `${baseUrl}/info/${conversationId}`,
+        method: 'GET'
+    })
 }
 
-// 删除会话
+/**
+ * 删除会话
+ * @param {string} conversationId - 会话ID
+ * @returns {Promise<void>}
+ */
 const deleteConversation = async (conversationId: string) => {
-    await api.delete(`/delete/${conversationId}`)
+    return request({
+        url: `${baseUrl}/delete/${conversationId}`,
+        method: 'DELETE'
+    })
 }
 
-// 发送消息
-const genMessage = async (conversationId: string, message: string) => {
-    const response = await api.post('/genMessage', { conversationId, message })
-    return response.data
+interface ISendMessageRes {
+    chat_id: string
 }
 
-// 查看消息列表
-const getMessageList = async (conversationId: string) => {
-    const response = await api.get(`/messageList?conversationId=${conversationId}`)
-    return response.data
+interface IMessage {
+    id: string
+    conversation_id: string
+    content: string
+    role: string
+    type: string
+    meta_data: string
+    created_at: string
+    updated_at: string
 }
 
-// 查看消息详情
-const getMessageDetail = async (messageId: string) => {
-    const response = await api.get(`/message/${messageId}`)
-    return response.data
-}
-
-// 生成聊天
-const genChat = async (conversationId: string) => {
-    const response = await api.post('/genChat', { conversationId })
-    return response.data
-}
-
-// 查看聊天状态
-const getChatStatus = async (conversationId: string, chatId: string) => {
-    const response = await api.get(`/status?conversationId=${conversationId}&chatId=${chatId}`)
-    return response.data
-}
-
-// 查看聊天消息
-const getChatMessages = async (conversationId: string, chatId: string) => {
-    const response = await api.get(`/messages?conversationId=${conversationId}&chatId=${chatId}`)
-    return response.data
-}
-
-// 发送聊天消息
+/**
+ * 发送聊天消息
+ * @param {string} conversationId - 会话ID
+ * @param {string} message - 消息内容
+ * @returns {Promise<ISendMessageRes>} 返回发送消息的响应
+ */
 const sendMessage = async (conversationId: string, message: string) => {
-    const response = await api.post('/sendMsg', { conversationId, message })
-    return response.data
+    return request<ISendMessageRes>({
+        url: `${baseUrl}/sendMsg`,
+        method: 'POST',
+        data: { conversationId, message }
+    })
+}
+
+/**
+ * 查看消息列表
+ * @param {string} conversationId - 会话ID
+ * @returns {Promise<IMessage[]>} 返回消息列表
+ */
+const getMessageList = async (conversationId: string) => {
+    return request<IMessage[]>({
+        url: `${baseUrl}/messageList`,
+        method: 'GET',
+        params: { conversationId }
+    })
+}
+
+/**
+ * 查看消息详情
+ * @param {string} messageId - 消息ID
+ * @returns {Promise<IMessage>} 返回消息详情
+ */
+const getMessageDetail = async (messageId: string) => {
+    return request<IMessage>({
+        url: `${baseUrl}/message/${messageId}`,
+        method: 'GET'
+    })
+}
+
+interface IChatStatus {
+    status: 'in_progress' | 'completed'
+}
+
+/**
+ * 查看聊天状态
+ * @param {string} conversationId - 会话ID
+ * @param {string} chatId - 聊天ID
+ * @returns {Promise<IChatStatus>} 返回聊天状态
+ */
+const getChatStatus = async (conversationId: string, chatId: string) => {
+    return request<IChatStatus>({
+        url: `${baseUrl}/status`,
+        method: 'GET',
+        params: { conversationId, chatId }
+    })
+}
+
+interface IChatMessage {
+    id: string
+    conversation_id: string
+    content: string
+    role: string
+    type: string
+}
+
+/**
+ * 查看聊天消息
+ * @param {string} conversationId - 会话ID
+ * @param {string} chatId - 聊天ID
+ * @returns {Promise<IChatMessage[]>} 返回聊天消息列表
+ */
+const getChatMessages = async (conversationId: string, chatId: string) => {
+    return request<IChatMessage[]>({
+        url: `${baseUrl}/messages`,
+        method: 'GET',
+        params: { conversationId, chatId }
+    })
 }
 
 export {
@@ -84,11 +152,11 @@ export {
     getConversations,
     getConversationInfo,
     deleteConversation,
-    genMessage,
+    sendMessage,
     getMessageList,
     getMessageDetail,
-    genChat,
     getChatStatus,
-    getChatMessages,
-    sendMessage
+    getChatMessages
 }
+
+export type { IConversation, ISendMessageRes, IMessage, IChatStatus, IChatMessage }
