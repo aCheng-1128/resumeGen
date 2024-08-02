@@ -38,18 +38,18 @@ api.interceptors.response.use(
             switch (error.response.status) {
                 case 401:
                     // 处理未授权错误
-                    showFailToast('未授权，请重新登录')
+                    console.error('未授权，请重新登录')
                     break
                 case 403:
                     // 处理禁止访问错误
-                    showFailToast('禁止访问')
+                    console.error('禁止访问')
                     break
                 case 404:
                     // 处理未找到错误
-                    showFailToast('请求地址不存在')
+                    console.error('请求地址不存在')
                     break
                 default:
-                    showFailToast(`错误: ${error.response.status}`)
+                    console.error(`错误: ${error.response.status}`)
             }
         } else {
             showFailToast('网络错误或服务器无响应')

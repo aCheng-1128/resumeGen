@@ -1,29 +1,30 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick } from 'vue'
-import { getConversations, getMessageList, genConversation, getChatStatus, getChatMessages, sendMessage } from '@/api/cozeChat'
-import type { IConversation } from '@/api/cozeChat'
+import { ref, onMounted, nextTick, computed } from 'vue'
+import { getConversations, getChatStatus, getChatMessages, sendMessage } from '@/api/cozeChat'
+import type { IChatMessage } from '@/api/cozeChat'
+import { getResumePngByUrl, getResumeHtmlByUrl } from '@/api/resume'
 import { useScroll } from '@vueuse/core'
+import { getZoomRatio } from '@/utils'
+import { showFailToast } from 'vant'
 
-const convs = ref<IConversation[]>([])
 const curConvId = ref<string>('')
 const msgList = ref<any[]>([])
 const iptText = ref<string>('')
 const chatId = ref<string>('')
 const chatStatus = ref<string>('')
 let timer: NodeJS.Timer | any = null
+const chatMsgs = ref<IChatMessage[]>([])
+const resumeImageUrl = ref<string>('')
+const resumeHtml = ref<string>('')
+const loadingText = ref<string>('')
+
+const resumeUrl = computed(() => {
+    return JSON.parse(chatMsgs.value.find((item) => item.type === 'tool_response')?.content || '{}').url
+})
 
 const fetchConversations = async () => {
     const res = await getConversations()
-    convs.value = res.data
-    if (convs.value.length > 0) {
-        curConvId.value = convs.value[0].id
-    }
-}
-
-const getMessageListFn = async (convId: string) => {
-    const res = await getMessageList(convId)
-    msgList.value = res.data.reverse()
-    scrollYToBottom()
+    curConvId.value = res.data[0].id
 }
 
 const getChatId = async () => {
@@ -37,29 +38,31 @@ const getChatStatusFn = async () => {
     const res = await getChatStatus(curConvId.value, chatId.value)
     chatStatus.value = res.data.status
     if (chatStatus.value === 'completed') {
+        loadingText.value = '正在生成简历图片...'
         if (timer) clearInterval(timer)
-        await getMessageListFn(curConvId.value)
-        getChatMessagesFn()
+        await getChatMessagesFn()
+        console.log(resumeUrl.value)
+        if (resumeUrl.value) {
+            const imageResponse = await getResumePngByUrl(resumeUrl.value)
+            resumeImageUrl.value = URL.createObjectURL(new Blob([imageResponse as any], { type: 'image/png' }))
+            const htmlResponse = await getResumeHtmlByUrl(resumeUrl.value)
+            resumeHtml.value = htmlResponse as unknown as string
+        } else {
+            showFailToast('生成简历失败，请重新尝试')
+        }
+        loadingText.value = ''
     }
 }
 
 const sendMsg = async () => {
     if (!iptText.value.trim()) return
+    loadingText.value = '正在生成简历模板...'
     msgList.value.push({ role: 'user', content: iptText.value })
     scrollYToBottom()
     await getChatId()
     timer = setInterval(getChatStatusFn, 1000)
     iptText.value = ''
 }
-
-const switchNav = (item: IConversation) => {
-    curConvId.value = item.id
-    getMessageListFn(item.id)
-}
-
-watch(curConvId, (newVal) => {
-    getMessageListFn(newVal)
-})
 
 const msgListScroll = ref<HTMLElement | null>(null)
 const { y: scrollY } = useScroll(msgListScroll, {
@@ -72,11 +75,7 @@ const scrollYToBottom = async () => {
 
 const getChatMessagesFn = async () => {
     const res = await getChatMessages(curConvId.value, chatId.value)
-    console.log('getChatMessages:', res)
-}
-
-const addConversation = async () => {
-    await genConversation().then(fetchConversations)
+    chatMsgs.value = res.data
 }
 
 onMounted(fetchConversations)
@@ -84,27 +83,30 @@ onMounted(fetchConversations)
 
 <template>
     <div class="coze_chat">
-        <div class="header">
-            <div class="convIds-list">
-                <div v-for="item in convs" :key="item.id" @click="switchNav(item)" class="item" :class="{ active: item.id === curConvId }">
-                    {{ item.name }}
-                </div>
-            </div>
-            <div class="add" @click="addConversation">+</div>
-        </div>
-        <div class="msg-list" ref="msgListScroll">
-            <div v-for="item in msgList" :key="item.id" class="msg-item" :class="{ 'user-msg': item.role === 'user', 'ai-msg': item.role === 'assistant' }">
-                <div class="msg-content">{{ item.content }}</div>
-            </div>
-        </div>
-        <div class="send-msg-box">
+        <div class="send-msg-box" contenteditable="true">
             <div class="ipt-content">
                 <label for="chatInput" class="label">
-                    <span class="label-title">My nice input</span>
+                    <span class="label-title">输入信息</span>
                     <input v-model="iptText" @keyup.enter="sendMsg" id="chatInput" class="input" name="text" placeholder="请输入问题.." type="text" />
                 </label>
             </div>
-            <button class="button" @click="sendMsg">发送</button>
+            <button class="button" @click="sendMsg">点击生成</button>
+        </div>
+        <div
+            class="resume-png-box"
+            :style="{
+                zoom: getZoomRatio()
+            }"
+        >
+            <img v-if="resumeImageUrl" :src="resumeImageUrl" alt="Resume PNG" class="resume-image" />
+            <div v-if="loadingText" class="png-loading">
+                <div class="typewriter">
+                    <div class="slide"><i></i></div>
+                    <div class="paper"></div>
+                    <div class="keyboard"></div>
+                </div>
+                <div class="text-[#275efe] text-[24px]">{{ loadingText }}</div>
+            </div>
         </div>
     </div>
 </template>
@@ -115,117 +117,11 @@ onMounted(fetchConversations)
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    background-color: #f1f1f1;
-
-    .header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0 10px;
-        background-color: #ffffff;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-
-        .convIds-list {
-            height: 50px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            overflow-x: auto;
-
-            .item {
-                font-size: 16px;
-                padding: 8px 16px;
-                background-color: #e6f7ff;
-                color: #1890ff;
-                text-align: center;
-                cursor: pointer;
-                white-space: nowrap;
-                border-radius: 4px;
-
-                &:hover {
-                    color: #ff4d4f;
-                    background-color: #fff1f0;
-                }
-
-                &.active {
-                    color: #ff4d4f;
-                    background-color: #fff1f0;
-                }
-            }
-        }
-
-        .add {
-            font-size: 16px;
-            padding: 8px 16px;
-            background-color: #e6f7ff;
-            color: #1890ff;
-            text-align: center;
-            cursor: pointer;
-            border-radius: 4px;
-        }
-    }
-
-    .msg-list {
-        flex: 1;
-        overflow-y: auto;
-        overflow-x: hidden;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        padding: 10px;
-        background-color: #f1f1f1;
-
-        &::-webkit-scrollbar {
-            width: 2px;
-        }
-
-        &::-webkit-scrollbar-thumb {
-            background-color: #1890ff;
-            border-radius: 4px;
-        }
-
-        &::-webkit-scrollbar-track {
-            background-color: #e6f7ff;
-        }
-
-        .msg-item {
-            display: flex;
-            align-items: flex-end;
-
-            &.user-msg {
-                justify-content: flex-end;
-
-                .msg-content {
-                    background-color: #1890ff;
-                    color: white;
-                    border-radius: 12px 12px 0 12px;
-                }
-            }
-
-            &.ai-msg {
-                justify-content: flex-start;
-
-                .msg-content {
-                    background-color: #e0e0e0;
-                    color: black;
-                    border-radius: 12px 12px 12px 0;
-                }
-            }
-
-            .msg-content {
-                max-width: 70%;
-                padding: 10px;
-                border-radius: 12px;
-                word-wrap: break-word;
-                word-break: break-all;
-            }
-        }
-    }
+    gap: 20px;
 
     .send-msg-box {
-        height: 60px;
         display: flex;
-        padding: 10px 25px;
+        padding: 50px 25px 10px;
         background-color: #ffffff;
         align-items: center;
         gap: 30px;
@@ -319,6 +215,414 @@ onMounted(fetchConversations)
             border-radius: 8px;
             cursor: pointer;
             font-size: 16px;
+        }
+    }
+
+    .resume-png-box {
+        width: 210mm;
+        height: 297mm;
+        box-sizing: border-box;
+        border: 1px solid #275efe;
+        margin: 0 auto;
+        overflow-y: scroll;
+
+        .png-loading {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            justify-content: center;
+            align-items: center;
+
+            .typewriter {
+                --blue: #5c86ff;
+                --blue-dark: #275efe;
+                --key: #fff;
+                --paper: #eef0fd;
+                --text: #d3d4ec;
+                --tool: #fbc56c;
+                --duration: 3s;
+                position: relative;
+                -webkit-animation: bounce05 var(--duration) linear infinite;
+                animation: bounce05 var(--duration) linear infinite;
+            }
+
+            .typewriter .slide {
+                width: 92px;
+                height: 20px;
+                border-radius: 3px;
+                margin-left: 14px;
+                transform: translateX(14px);
+                background: linear-gradient(var(--blue), var(--blue-dark));
+                -webkit-animation: slide05 var(--duration) ease infinite;
+                animation: slide05 var(--duration) ease infinite;
+            }
+
+            .typewriter .slide:before,
+            .typewriter .slide:after,
+            .typewriter .slide i:before {
+                content: '';
+                position: absolute;
+                background: var(--tool);
+            }
+
+            .typewriter .slide:before {
+                width: 2px;
+                height: 8px;
+                top: 6px;
+                left: 100%;
+            }
+
+            .typewriter .slide:after {
+                left: 94px;
+                top: 3px;
+                height: 14px;
+                width: 6px;
+                border-radius: 3px;
+            }
+
+            .typewriter .slide i {
+                display: block;
+                position: absolute;
+                right: 100%;
+                width: 6px;
+                height: 4px;
+                top: 4px;
+                background: var(--tool);
+            }
+
+            .typewriter .slide i:before {
+                right: 100%;
+                top: -2px;
+                width: 4px;
+                border-radius: 2px;
+                height: 14px;
+            }
+
+            .typewriter .paper {
+                position: absolute;
+                left: 24px;
+                top: -26px;
+                width: 40px;
+                height: 46px;
+                border-radius: 5px;
+                background: var(--paper);
+                transform: translateY(46px);
+                -webkit-animation: paper05 var(--duration) linear infinite;
+                animation: paper05 var(--duration) linear infinite;
+            }
+
+            .typewriter .paper:before {
+                content: '';
+                position: absolute;
+                left: 6px;
+                right: 6px;
+                top: 7px;
+                border-radius: 2px;
+                height: 4px;
+                transform: scaleY(0.8);
+                background: var(--text);
+                box-shadow:
+                    0 12px 0 var(--text),
+                    0 24px 0 var(--text),
+                    0 36px 0 var(--text);
+            }
+
+            .typewriter .keyboard {
+                width: 120px;
+                height: 56px;
+                margin-top: -10px;
+                z-index: 1;
+                position: relative;
+            }
+
+            .typewriter .keyboard:before,
+            .typewriter .keyboard:after {
+                content: '';
+                position: absolute;
+            }
+
+            .typewriter .keyboard:before {
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                border-radius: 7px;
+                background: linear-gradient(135deg, var(--blue), var(--blue-dark));
+                transform: perspective(10px) rotateX(2deg);
+                transform-origin: 50% 100%;
+            }
+
+            .typewriter .keyboard:after {
+                left: 2px;
+                top: 25px;
+                width: 11px;
+                height: 4px;
+                border-radius: 2px;
+                box-shadow:
+                    15px 0 0 var(--key),
+                    30px 0 0 var(--key),
+                    45px 0 0 var(--key),
+                    60px 0 0 var(--key),
+                    75px 0 0 var(--key),
+                    90px 0 0 var(--key),
+                    22px 10px 0 var(--key),
+                    37px 10px 0 var(--key),
+                    52px 10px 0 var(--key),
+                    60px 10px 0 var(--key),
+                    68px 10px 0 var(--key),
+                    83px 10px 0 var(--key);
+                -webkit-animation: keyboard05 var(--duration) linear infinite;
+                animation: keyboard05 var(--duration) linear infinite;
+            }
+
+            @keyframes bounce05 {
+                85%,
+                92%,
+                100% {
+                    transform: translateY(0);
+                }
+
+                89% {
+                    transform: translateY(-4px);
+                }
+
+                95% {
+                    transform: translateY(2px);
+                }
+            }
+
+            @keyframes slide05 {
+                5% {
+                    transform: translateX(14px);
+                }
+
+                15%,
+                30% {
+                    transform: translateX(6px);
+                }
+
+                40%,
+                55% {
+                    transform: translateX(0);
+                }
+
+                65%,
+                70% {
+                    transform: translateX(-4px);
+                }
+
+                80%,
+                89% {
+                    transform: translateX(-12px);
+                }
+
+                100% {
+                    transform: translateX(14px);
+                }
+            }
+
+            @keyframes paper05 {
+                5% {
+                    transform: translateY(46px);
+                }
+
+                20%,
+                30% {
+                    transform: translateY(34px);
+                }
+
+                40%,
+                55% {
+                    transform: translateY(22px);
+                }
+
+                65%,
+                70% {
+                    transform: translateY(10px);
+                }
+
+                80%,
+                85% {
+                    transform: translateY(0);
+                }
+
+                92%,
+                100% {
+                    transform: translateY(46px);
+                }
+            }
+
+            @keyframes keyboard05 {
+                5%,
+                12%,
+                21%,
+                30%,
+                39%,
+                48%,
+                57%,
+                66%,
+                75%,
+                84% {
+                    box-shadow:
+                        15px 0 0 var(--key),
+                        30px 0 0 var(--key),
+                        45px 0 0 var(--key),
+                        60px 0 0 var(--key),
+                        75px 0 0 var(--key),
+                        90px 0 0 var(--key),
+                        22px 10px 0 var(--key),
+                        37px 10px 0 var(--key),
+                        52px 10px 0 var(--key),
+                        60px 10px 0 var(--key),
+                        68px 10px 0 var(--key),
+                        83px 10px 0 var(--key);
+                }
+
+                9% {
+                    box-shadow:
+                        15px 2px 0 var(--key),
+                        30px 0 0 var(--key),
+                        45px 0 0 var(--key),
+                        60px 0 0 var(--key),
+                        75px 0 0 var(--key),
+                        90px 0 0 var(--key),
+                        22px 10px 0 var(--key),
+                        37px 10px 0 var(--key),
+                        52px 10px 0 var(--key),
+                        60px 10px 0 var(--key),
+                        68px 10px 0 var(--key),
+                        83px 10px 0 var(--key);
+                }
+
+                18% {
+                    box-shadow:
+                        15px 0 0 var(--key),
+                        30px 0 0 var(--key),
+                        45px 0 0 var(--key),
+                        60px 2px 0 var(--key),
+                        75px 0 0 var(--key),
+                        90px 0 0 var(--key),
+                        22px 10px 0 var(--key),
+                        37px 10px 0 var(--key),
+                        52px 10px 0 var(--key),
+                        60px 10px 0 var(--key),
+                        68px 10px 0 var(--key),
+                        83px 10px 0 var(--key);
+                }
+
+                27% {
+                    box-shadow:
+                        15px 0 0 var(--key),
+                        30px 0 0 var(--key),
+                        45px 0 0 var(--key),
+                        60px 0 0 var(--key),
+                        75px 0 0 var(--key),
+                        90px 0 0 var(--key),
+                        22px 12px 0 var(--key),
+                        37px 10px 0 var(--key),
+                        52px 10px 0 var(--key),
+                        60px 10px 0 var(--key),
+                        68px 10px 0 var(--key),
+                        83px 10px 0 var(--key);
+                }
+
+                36% {
+                    box-shadow:
+                        15px 0 0 var(--key),
+                        30px 0 0 var(--key),
+                        45px 0 0 var(--key),
+                        60px 0 0 var(--key),
+                        75px 0 0 var(--key),
+                        90px 0 0 var(--key),
+                        22px 10px 0 var(--key),
+                        37px 10px 0 var(--key),
+                        52px 12px 0 var(--key),
+                        60px 12px 0 var(--key),
+                        68px 12px 0 var(--key),
+                        83px 10px 0 var(--key);
+                }
+
+                45% {
+                    box-shadow:
+                        15px 0 0 var(--key),
+                        30px 0 0 var(--key),
+                        45px 0 0 var(--key),
+                        60px 0 0 var(--key),
+                        75px 0 0 var(--key),
+                        90px 2px 0 var(--key),
+                        22px 10px 0 var(--key),
+                        37px 10px 0 var(--key),
+                        52px 10px 0 var(--key),
+                        60px 10px 0 var(--key),
+                        68px 10px 0 var(--key),
+                        83px 10px 0 var(--key);
+                }
+
+                54% {
+                    box-shadow:
+                        15px 0 0 var(--key),
+                        30px 2px 0 var(--key),
+                        45px 0 0 var(--key),
+                        60px 0 0 var(--key),
+                        75px 0 0 var(--key),
+                        90px 0 0 var(--key),
+                        22px 10px 0 var(--key),
+                        37px 10px 0 var(--key),
+                        52px 10px 0 var(--key),
+                        60px 10px 0 var(--key),
+                        68px 10px 0 var(--key),
+                        83px 10px 0 var(--key);
+                }
+
+                63% {
+                    box-shadow:
+                        15px 0 0 var(--key),
+                        30px 0 0 var(--key),
+                        45px 0 0 var(--key),
+                        60px 0 0 var(--key),
+                        75px 0 0 var(--key),
+                        90px 0 0 var(--key),
+                        22px 10px 0 var(--key),
+                        37px 10px 0 var(--key),
+                        52px 10px 0 var(--key),
+                        60px 10px 0 var(--key),
+                        68px 10px 0 var(--key),
+                        83px 12px 0 var(--key);
+                }
+
+                72% {
+                    box-shadow:
+                        15px 0 0 var(--key),
+                        30px 0 0 var(--key),
+                        45px 2px 0 var(--key),
+                        60px 0 0 var(--key),
+                        75px 0 0 var(--key),
+                        90px 0 0 var(--key),
+                        22px 10px 0 var(--key),
+                        37px 10px 0 var(--key),
+                        52px 10px 0 var(--key),
+                        60px 10px 0 var(--key),
+                        68px 10px 0 var(--key),
+                        83px 10px 0 var(--key);
+                }
+
+                81% {
+                    box-shadow:
+                        15px 0 0 var(--key),
+                        30px 0 0 var(--key),
+                        45px 0 0 var(--key),
+                        60px 0 0 var(--key),
+                        75px 0 0 var(--key),
+                        90px 0 0 var(--key),
+                        22px 10px 0 var(--key),
+                        37px 12px 0 var(--key),
+                        52px 10px 0 var(--key),
+                        60px 10px 0 var(--key),
+                        68px 10px 0 var(--key),
+                        83px 10px 0 var(--key);
+                }
+            }
         }
     }
 }
